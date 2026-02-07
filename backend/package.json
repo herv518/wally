@@ -1,0 +1,14 @@
+{
+  "name": "wally-backend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Backend API for the WALLY voice widget",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ws": "^8.18.0"
+  }
+}

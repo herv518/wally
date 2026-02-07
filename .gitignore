@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+backend/node_modules/
+
+# Secrets
+.env
+*.env
+backend/.env
+wally/.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime data
+wally/data/*.jsonl
+wally/logs/*
+!wally/logs/.gitkeep

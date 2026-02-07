@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>WALLY - Voice Avatar</title>
+  <style>
+    :root {
+      --bg0: #071018;
+      --bg1: #0b1d2a;
+      --ink: #eef8ff;
+      --muted: #b2c7d8;
+      --line: rgba(167, 223, 255, 0.25);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+
+    body {
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(700px 450px at 10% 12%, rgba(107, 229, 255, 0.2), transparent 60%),
+        radial-gradient(700px 450px at 90% 85%, rgba(255, 122, 122, 0.18), transparent 60%),
+        linear-gradient(145deg, var(--bg0), var(--bg1));
+      overflow: hidden;
+    }
+
+    .scene {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: calc(20px + var(--safe-top)) calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
+    }
+
+    .card {
+      width: min(980px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(7, 16, 24, 0.78), rgba(7, 16, 24, 0.54));
+      backdrop-filter: blur(8px);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      min-height: 520px;
+      animation: riseIn .5s ease-out;
+    }
+
+    .portrait {
+      position: relative;
+      border-right: 1px solid var(--line);
+      background:
+        radial-gradient(300px 300px at 50% 20%, rgba(107, 229, 255, 0.2), transparent 70%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+
+    .wally-svg {
+      width: 100%;
+      max-width: 270px;
+      display: block;
+      filter: drop-shadow(0 16px 36px rgba(0,0,0,.35));
+      cursor: pointer;
+      transition: transform .18s ease;
+    }
+    .portrait:hover .wally-svg { transform: translateY(-2px) scale(1.01); }
+
+    .w-line {
+      stroke: #111;
+      stroke-width: 6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .w-head,
+    .w-ear,
+    .w-eye-ring,
+    .w-foot {
+      fill: #fcfeff;
+      stroke: #111;
+      stroke-width: 6;
+    }
+
+    .w-shirt {
+      fill: #0f1318;
+      stroke: #111;
+      stroke-width: 6;
+    }
+
+    .w-shirt-detail {
+      stroke: #fcfeff;
+      stroke-width: 4;
+      stroke-linecap: round;
+      fill: none;
+    }
+
+    .w-pupil { fill: #0d1318; }
+    .w-highlight { fill: #fff; }
+
+    .w-leg {
+      fill: #fcfeff;
+      stroke: #111;
+      stroke-width: 6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .w-shoe {
+      fill: #dce7ef;
+      stroke: #111;
+      stroke-width: 5;
+    }
+
+    .w-mouth-open {
+      opacity: 0;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .portrait.is-speaking .w-mouth-smile { opacity: 0; }
+    .portrait.is-speaking .w-mouth-open {
+      opacity: 1;
+      animation: talkMouth .16s ease-in-out infinite alternate;
+    }
+
+    .w-eye-left-pupil,
+    .w-eye-right-pupil {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .portrait.is-speaking .w-eye-left-pupil,
+    .portrait.is-speaking .w-eye-right-pupil {
+      animation: eyeShift 1.1s ease-in-out infinite;
+    }
+
+    .portrait.is-speaking .w-blink {
+      animation: blink 2.2s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center top;
+    }
+    .portrait.is-listening .w-eye-ring {
+      stroke: #5ee4ff;
+      filter: drop-shadow(0 0 8px rgba(94, 228, 255, .45));
+    }
+    .portrait.is-listening .pulse {
+      border-color: rgba(94, 228, 255, .55);
+      animation-duration: 1.3s;
+    }
+
+    @keyframes talkMouth {
+      from { transform: scaleY(0.7); }
+      to { transform: scaleY(1.45); }
+    }
+
+    @keyframes eyeShift {
+      0% { transform: translateX(0); }
+      50% { transform: translateX(1px); }
+      100% { transform: translateX(-1px); }
+    }
+
+    @keyframes blink {
+      0%, 90%, 100% { transform: scaleY(0.01); opacity: 0; }
+      93% { transform: scaleY(1); opacity: 1; }
+      96% { transform: scaleY(1); opacity: 1; }
+    }
+
+    .pulse {
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      border-radius: 999px;
+      border: 1px solid rgba(107, 229, 255, 0.3);
+      animation: pulse 2.8s infinite ease-out;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.85); opacity: 0.75; }
+      70% { transform: scale(1.1); opacity: 0.15; }
+      100% { transform: scale(1.1); opacity: 0; }
+    }
+    @keyframes riseIn {
+      from { transform: translateY(8px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .content {
+      padding: 34px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 6vw, 62px);
+      line-height: 0.96;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      text-shadow: 0 0 18px rgba(107, 229, 255, 0.32);
+    }
+
+    .intro {
+      margin: 0;
+      font-size: clamp(16px, 2.6vw, 21px);
+      color: var(--ink);
+      max-width: 38ch;
+      line-height: 1.4;
+    }
+
+    .traits {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .traits li {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.4;
+    }
+
+    .traits b { color: var(--ink); }
+
+    button {
+      min-width: 44px;
+      min-height: 44px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 12px 14px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.04);
+      font: inherit;
+      cursor: pointer;
+      transition: transform .15s ease, border-color .2s ease, background-color .2s ease;
+    }
+    button:hover {
+      border-color: rgba(107,229,255,.45);
+      background: rgba(107,229,255,.12);
+      transform: translateY(-1px);
+    }
+    #btnTalkToggle[data-on="true"] {
+      border-color: rgba(107,229,255,.65);
+      background: linear-gradient(180deg, rgba(107,229,255,.26), rgba(107,229,255,.12));
+    }
+
+    .voice-config {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 2px;
+    }
+
+    .voice-config input,
+    .voice-config select {
+      min-height: 44px;
+      flex: 1 1 260px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--ink);
+      padding: 10px 12px;
+      font: inherit;
+    }
+
+    .status { display: none; }
+
+    @media (max-width: 860px) {
+      body { overflow: auto; }
+      .scene { display: block; }
+      .card { grid-template-columns: 1fr; min-height: auto; }
+      .portrait { border-right: 0; border-bottom: 1px solid var(--line); }
+      .content { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="scene">
+    <section class="card" aria-label="WALLY Profil">
+      <aside class="portrait">
+        <span class="pulse" aria-hidden="true"></span>
+        <svg id="mascot" class="wally-svg" viewBox="0 0 520 520" role="img" aria-label="WALLY Mascot">
+          <path class="w-line" d="M262 114 C262 44 270 10 316 10 C350 10 360 42 340 58 C319 75 293 64 301 43" />
+          <path class="w-ear" d="M74 232 C43 238 24 262 24 292 C24 322 43 346 74 350 Z" />
+          <path class="w-ear" d="M446 232 C477 238 496 262 496 292 C496 322 477 346 446 350 Z" />
+          <path class="w-head" d="M98 148 C136 116 202 102 260 102 C322 102 384 114 420 146 C446 170 456 210 456 262 C456 314 446 354 420 378 C386 410 326 422 260 422 C188 422 134 410 98 380 C74 360 64 322 64 264 C64 206 74 170 98 148 Z" />
+          <path class="w-line" d="M446 304 C438 328 436 350 446 372 C452 386 462 394 474 398" />
+
+          <path class="w-line" d="M130 196 C145 181 166 179 182 190" />
+          <path class="w-line" d="M216 176 C232 164 256 165 272 176" />
+          <path class="w-line" d="M338 190 C355 178 378 181 392 196" />
+
+          <circle class="w-eye-ring" cx="178" cy="276" r="72" />
+          <circle class="w-eye-ring" cx="342" cy="276" r="72" />
+
+          <g class="w-eye-left-pupil">
+            <circle class="w-pupil" cx="178" cy="276" r="38" />
+            <circle class="w-highlight" cx="164" cy="259" r="12" />
+            <circle class="w-highlight" cx="188" cy="289" r="5" />
+            <circle class="w-highlight" cx="170" cy="296" r="4" />
+          </g>
+
+          <g class="w-eye-right-pupil">
+            <circle class="w-pupil" cx="342" cy="276" r="38" />
+            <circle class="w-highlight" cx="328" cy="259" r="12" />
+            <circle class="w-highlight" cx="352" cy="289" r="5" />
+            <circle class="w-highlight" cx="334" cy="296" r="4" />
+          </g>
+
+          <path class="w-line" d="M118 254 C108 248 102 238 104 226" />
+          <path class="w-line" d="M132 246 C121 238 117 227 121 214" />
+          <path class="w-line" d="M146 240 C136 232 132 222 136 210" />
+          <path class="w-line" d="M402 254 C412 248 418 238 416 226" />
+          <path class="w-line" d="M388 246 C399 238 403 227 399 214" />
+          <path class="w-line" d="M374 240 C384 232 388 222 384 210" />
+
+          <path class="w-line w-mouth-smile" d="M220 340 C236 358 266 358 282 340" />
+          <g class="w-mouth-open">
+            <path d="M220 340 C236 364 266 364 282 340 C268 352 236 352 220 340 Z" fill="#1a2128" stroke="#111" stroke-width="4" />
+            <path d="M251 349 C252 355 252 360 251 364" stroke="#d8a0a8" stroke-width="3" stroke-linecap="round" />
+          </g>
+
+          <rect class="w-blink" x="126" y="236" width="104" height="8" rx="4" fill="#fcfeff" />
+          <rect class="w-blink" x="290" y="236" width="104" height="8" rx="4" fill="#fcfeff" />
+
+          <path class="w-shirt" d="M154 422 C182 406 338 406 366 422 C390 436 406 468 410 520 L110 520 C114 468 130 436 154 422 Z" />
+          <path class="w-shirt-detail" d="M152 424 C170 414 192 414 210 424" />
+          <path class="w-shirt-detail" d="M368 424 C350 414 328 414 310 424" />
+          <path class="w-shirt-detail" d="M252 421 C256 431 264 431 268 421" />
+
+          <path class="w-leg" d="M228 425 C212 442 200 466 194 492 C191 505 186 514 179 516 C173 518 171 514 172 506 C174 485 184 449 199 426" />
+          <path class="w-leg" d="M290 425 C307 442 320 466 326 492 C329 505 334 514 341 516 C347 518 349 514 348 506 C346 485 336 449 320 426" />
+          <path class="w-line" d="M194 438 C186 459 181 481 178 501" />
+          <ellipse class="w-shoe" cx="168" cy="515" rx="14" ry="7" />
+          <ellipse class="w-shoe" cx="352" cy="515" rx="14" ry="7" />
+        </svg>
+      </aside>
+
+      <section class="content">
+        <div class="label">WALLY identity</div>
+        <div class="voice-config">
+          <select id="providerSelect" aria-label="Provider">
+            <option value="openai">OpenAI</option>
+            <option value="xai">xAI (Grok)</option>
+          </select>
+          <input id="apiKeyInput" type="password" placeholder="API-Key fuer diese Session (nicht gespeichert)" autocomplete="off" />
+          <button id="btnUseKey">Use Key</button>
+          <button id="btnTalkToggle">Start conversation</button>
+        </div>
+        <h1>Ich bin WALLY</h1>
+        <p class="intro">Dein klarer, direkter Co-Pilot. Ich helfe dir, Ideen in konkrete Schritte zu verwandeln.</p>
+
+        <ul class="traits">
+          <li><b>Wie ich arbeite:</b> kurz, strukturiert, ohne BlaBla.</li>
+          <li><b>Wofuer ich da bin:</b> Entscheidungen vereinfachen und umsetzbare Ergebnisse liefern.</li>
+          <li><b>Was du erwarten kannst:</b> Fokus, Tempo und saubere Priorisierung.</li>
+        </ul>
+
+        <div class="status" id="status"></div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const status = document.getElementById('status');
+    const mascot = document.getElementById('mascot');
+    const portrait = document.querySelector('.portrait');
+    const providerSelect = document.getElementById('providerSelect');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const btnTalkToggle = document.getElementById('btnTalkToggle');
+
+    let activeAudio = null;
+    let lastSpokenAt = 0;
+    let sessionApiKey = '';
+    let isListening = false;
+    let isSpeaking = false;
+    let isThinking = false;
+    let conversationOn = false;
+    const convo = [];
+    let micStream = null;
+    const API_TIMEOUT_MS = 12000;
+    let provider = 'openai';
+    const PROVIDERS = {
+      openai: {
+        chatModel: 'gpt-4o-mini',
+        ttsModel: 'gpt-4o-mini-tts',
+        sttModel: 'gpt-4o-mini-transcribe'
+      },
+      xai: {
+        chatModels: ['grok-2-latest', 'grok-beta', 'grok-3-mini']
+      }
+    };
+
+    let audioCtx = null;
+    let lipAnalyser = null;
+    let lipData = null;
+    let lipRaf = 0;
+    const mouthOpenEl = document.querySelector('.w-mouth-open');
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let xaiRec = null;
+    let xaiRecActive = false;
+    let xaiLoopEnabled = false;
+    let xaiRestartTimer = 0;
+    let xaiLastHeardText = '';
+    let xaiLastHeardAt = 0;
+    let xaiNoSpeechTimer = 0;
+
+    async function ensureMicStream() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia unavailable');
+      }
+      if (!micStream || !micStream.active) {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      return micStream;
+    }
+
+    function stopMicStream() {
+      if (!micStream) return;
+      try {
+        micStream.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+      micStream = null;
+    }
+
+    function stopXaiRecognition() {
+      if (xaiRestartTimer) {
+        clearTimeout(xaiRestartTimer);
+        xaiRestartTimer = 0;
+      }
+      if (xaiNoSpeechTimer) {
+        clearTimeout(xaiNoSpeechTimer);
+        xaiNoSpeechTimer = 0;
+      }
+      if (xaiRec) {
+        try { xaiRec.stop(); } catch (_) {}
+      }
+      xaiRecActive = false;
+      isListening = false;
+      portrait.classList.remove('is-listening');
+    }
+
+    function startXaiRecognition() {
+      if (!SpeechRecognitionCtor || !conversationOn || !xaiLoopEnabled || isSpeaking) return;
+      if (xaiRestartTimer) {
+        clearTimeout(xaiRestartTimer);
+        xaiRestartTimer = 0;
+      }
+      if (!xaiRec) {
+        xaiRec = new SpeechRecognitionCtor();
+        xaiRec.lang = (navigator.language || 'de-DE');
+        xaiRec.interimResults = true;
+        xaiRec.continuous = true;
+        xaiRec.maxAlternatives = 1;
+        xaiRec.onstart = () => {
+          xaiRecActive = true;
+          isListening = true;
+          portrait.classList.add('is-listening');
+          if (xaiNoSpeechTimer) clearTimeout(xaiNoSpeechTimer);
+          xaiNoSpeechTimer = setTimeout(async () => {
+            if (!conversationOn || provider !== 'xai') return;
+            if (Date.now() - xaiLastHeardAt < 7000) return;
+            if (isThinking || isSpeaking) return;
+            await speakWally('Ich hoere noch nichts. Sprich bitte kurz und deutlich.');
+          }, 9000);
+        };
+        xaiRec.onresult = (ev) => {
+          const idx = ev.results.length - 1;
+          const result = idx >= 0 ? ev.results[idx] : null;
+          const heard = (result && result[0] && result[0].transcript ? result[0].transcript : '').trim();
+          if (!heard || isSpeaking || isThinking) return;
+          const now = Date.now();
+          if (heard === xaiLastHeardText && (now - xaiLastHeardAt) < 1400) return;
+          xaiLastHeardText = heard;
+          xaiLastHeardAt = now;
+          if (xaiNoSpeechTimer) {
+            clearTimeout(xaiNoSpeechTimer);
+            xaiNoSpeechTimer = 0;
+          }
+          askWally(heard);
+        };
+        xaiRec.onerror = () => {
+          xaiRecActive = false;
+          isListening = false;
+          portrait.classList.remove('is-listening');
+          if (!conversationOn || !xaiLoopEnabled || isSpeaking) return;
+          xaiRestartTimer = setTimeout(() => startXaiRecognition(), 550);
+        };
+        xaiRec.onend = () => {
+          xaiRecActive = false;
+          isListening = false;
+          portrait.classList.remove('is-listening');
+          if (!conversationOn || !xaiLoopEnabled || isSpeaking) return;
+          xaiRestartTimer = setTimeout(() => startXaiRecognition(), 320);
+        };
+      }
+      if (xaiRecActive) return;
+      try {
+        xaiRec.start();
+      } catch (_) {}
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs = API_TIMEOUT_MS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function fetchJsonWithFallback({ primaryUrl, fallbackUrl, options, timeoutMs = API_TIMEOUT_MS }) {
+      let firstErr = null;
+      try {
+        const res = await fetchWithTimeout(primaryUrl, options, timeoutMs);
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`${primaryUrl} ${res.status}: ${t.slice(0, 140)}`);
+        }
+        return await res.json();
+      } catch (err) {
+        firstErr = err;
+      }
+
+      const res2 = await fetchWithTimeout(fallbackUrl, options, timeoutMs);
+      if (!res2.ok) {
+        const t2 = await res2.text().catch(() => '');
+        throw new Error(`Primary: ${firstErr?.message || 'unknown'} | Fallback: ${fallbackUrl} ${res2.status}: ${t2.slice(0, 140)}`);
+      }
+      return await res2.json();
+    }
+
+    async function fetchBlobWithFallback({ primaryUrl, fallbackUrl, options, timeoutMs = API_TIMEOUT_MS }) {
+      let firstErr = null;
+      try {
+        const res = await fetchWithTimeout(primaryUrl, options, timeoutMs);
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`${primaryUrl} ${res.status}: ${t.slice(0, 140)}`);
+        }
+        return await res.blob();
+      } catch (err) {
+        firstErr = err;
+      }
+
+      const res2 = await fetchWithTimeout(fallbackUrl, options, timeoutMs);
+      if (!res2.ok) {
+        const t2 = await res2.text().catch(() => '');
+        throw new Error(`Primary: ${firstErr?.message || 'unknown'} | Fallback: ${fallbackUrl} ${res2.status}: ${t2.slice(0, 140)}`);
+      }
+      return await res2.blob();
+    }
+
+    function extractResponseText(data) {
+      if (!data) return '';
+      if (typeof data.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+      if (Array.isArray(data.output)) {
+        const parts = [];
+        data.output.forEach((item) => {
+          if (!item || !Array.isArray(item.content)) return;
+          item.content.forEach((c) => {
+            if (c && typeof c.text === 'string' && c.text.trim()) parts.push(c.text.trim());
+          });
+        });
+        return parts.join('\n').trim();
+      }
+      return '';
+    }
+
+    function extractXaiText(data) {
+      const msg = data?.choices?.[0]?.message?.content;
+      if (typeof msg === 'string') return msg.trim();
+      if (Array.isArray(msg)) {
+        return msg.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('\n').trim();
+      }
+      return '';
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const value = String(reader.result || '');
+          const idx = value.indexOf(',');
+          resolve(idx >= 0 ? value.slice(idx + 1) : value);
+        };
+        reader.onerror = () => reject(new Error('blob->base64 failed'));
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function base64ToUint8(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+
+    async function playPcm16Base64(base64Audio, sampleRate = 24000) {
+      if (!base64Audio) return;
+      const bytes = base64ToUint8(base64Audio);
+      const frameLen = Math.floor(bytes.byteLength / 2);
+      if (!frameLen) return;
+
+      const pcm = new Int16Array(bytes.buffer, bytes.byteOffset, frameLen);
+      const float32 = new Float32Array(frameLen);
+      for (let i = 0; i < frameLen; i++) float32[i] = pcm[i] / 32768;
+
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') {
+        try { await audioCtx.resume(); } catch (_) {}
+      }
+
+      const audioBuffer = audioCtx.createBuffer(1, frameLen, sampleRate);
+      audioBuffer.copyToChannel(float32, 0);
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+
+      await new Promise((resolve) => {
+        setSpeaking(true);
+        source.onended = () => {
+          stopLipSync();
+          setSpeaking(false);
+          resolve();
+        };
+        source.start();
+      });
+    }
+
+    function setSpeaking(on) {
+      portrait.classList.toggle('is-speaking', !!on);
+      isSpeaking = !!on;
+      if (!on && mouthOpenEl) mouthOpenEl.style.transform = 'scaleY(0.7)';
+    }
+
+    function stopLipSync() {
+      if (lipRaf) {
+        cancelAnimationFrame(lipRaf);
+        lipRaf = 0;
+      }
+      if (mouthOpenEl) mouthOpenEl.style.transform = 'scaleY(0.7)';
+    }
+
+    function setToggleLabel() {
+      btnTalkToggle.textContent = conversationOn ? 'Stop conversation' : 'Start conversation';
+      btnTalkToggle.setAttribute('data-on', conversationOn ? 'true' : 'false');
+    }
+
+    function tryLoopListen(delayMs = 180) {
+      if (!conversationOn) return;
+      if (isListening || isSpeaking) return;
+      if (delayMs <= 0) {
+        startVoiceQuestion();
+        return;
+      }
+      setTimeout(() => {
+        if (!conversationOn) return;
+        if (isListening || isSpeaking) return;
+        startVoiceQuestion();
+      }, delayMs);
+    }
+
+    function startLipSyncFromAudio(audioEl) {
+      stopLipSync();
+      if (!audioEl || !mouthOpenEl) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaElementSource(audioEl);
+        lipAnalyser = audioCtx.createAnalyser();
+        lipAnalyser.fftSize = 256;
+        lipData = new Uint8Array(lipAnalyser.frequencyBinCount);
+        source.connect(lipAnalyser);
+        lipAnalyser.connect(audioCtx.destination);
+
+        const tick = () => {
+          lipAnalyser.getByteFrequencyData(lipData);
+          let sum = 0;
+          for (let i = 2; i < 28; i++) sum += lipData[i];
+          const avg = sum / 26;
+          const scale = Math.min(1.8, Math.max(0.62, 0.62 + (avg / 255) * 1.35));
+          mouthOpenEl.style.transform = `scaleY(${scale.toFixed(3)})`;
+          lipRaf = requestAnimationFrame(tick);
+        };
+        lipRaf = requestAnimationFrame(tick);
+      } catch (_) {
+        // fallback: keep CSS talk animation
+      }
+    }
+
+    async function speakWally(text) {
+      const now = Date.now();
+      if (now - lastSpokenAt < 120) return;
+      lastSpokenAt = now;
+      if (!sessionApiKey) return;
+
+      try {
+        if (provider === 'xai') {
+          if (!('speechSynthesis' in window)) return;
+          if (activeAudio) {
+            activeAudio.pause();
+            activeAudio = null;
+          }
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = 'de-DE';
+          utter.rate = 1.05;
+          utter.pitch = 1.0;
+          utter.onstart = () => setSpeaking(true);
+          utter.onend = () => {
+            stopLipSync();
+            setSpeaking(false);
+          };
+          utter.onerror = () => {
+            stopLipSync();
+            setSpeaking(false);
+          };
+          window.speechSynthesis.speak(utter);
+          return;
+        }
+
+        if (activeAudio) {
+          activeAudio.pause();
+          activeAudio = null;
+        }
+        const body = JSON.stringify({ model: PROVIDERS.openai.ttsModel, voice: 'alloy', input: text });
+        const blob = await fetchBlobWithFallback({
+          primaryUrl: '/api/tts',
+          fallbackUrl: 'https://api.openai.com/v1/audio/speech',
+          options: {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${sessionApiKey}`
+            },
+            body
+          }
+        });
+
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        activeAudio = audio;
+        audio.onplay = () => {
+          setSpeaking(true);
+          startLipSyncFromAudio(audio);
+        };
+        audio.onended = () => {
+          stopLipSync();
+          setSpeaking(false);
+          URL.revokeObjectURL(url);
+          tryLoopListen(120);
+        };
+        audio.onerror = () => {
+          stopLipSync();
+          setSpeaking(false);
+          URL.revokeObjectURL(url);
+          tryLoopListen(220);
+        };
+        await audio.play();
+      } catch (_) {
+        setSpeaking(false);
+      }
+    }
+
+    async function askWally(question) {
+      const prompt = (question || '').trim();
+      if (!prompt || !sessionApiKey) return;
+      if (isThinking) return;
+
+      isThinking = true;
+      try {
+        convo.push({ role: 'user', content: prompt });
+        let answer = '';
+        if (provider === 'xai') {
+          let lastErr = null;
+          for (const modelName of PROVIDERS.xai.chatModels) {
+            const xaiBody = JSON.stringify({
+              model: modelName,
+              messages: [
+                { role: 'system', content: 'Du bist WALLY, ein Spezialagent fuer Autohaus und Fleet. Antworte auf Deutsch in maximal 2 kurzen Saetzen, konkret und ohne Wiederholung.' },
+                ...convo.slice(-6).map((m) => ({ role: m.role, content: m.content }))
+              ],
+              temperature: 0.2,
+              max_tokens: 120
+            });
+            const res = await fetchWithTimeout('https://api.x.ai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionApiKey}`
+              },
+              body: xaiBody
+            });
+            if (!res.ok) {
+              const t = await res.text().catch(() => '');
+              lastErr = new Error(`xAI ${res.status}: ${t.slice(0, 140)}`);
+              continue;
+            }
+            const data = await res.json();
+            answer = extractXaiText(data);
+            if (answer) break;
+          }
+          if (!answer && lastErr) throw lastErr;
+        } else {
+          const body = JSON.stringify({
+            model: PROVIDERS.openai.chatModel,
+            instructions: 'Du bist WALLY, ein Spezialagent fuer Autohaus und Fleet. Antworte auf Deutsch in maximal 2 kurzen Saetzen, konkret und ohne Wiederholung.',
+            input: convo.slice(-4),
+            max_output_tokens: 120
+          });
+          const data = await fetchJsonWithFallback({
+            primaryUrl: '/api/chat',
+            fallbackUrl: 'https://api.openai.com/v1/responses',
+            options: {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionApiKey}`
+              },
+              body
+            }
+          });
+          answer = extractResponseText(data);
+        }
+        answer = answer || 'Okay, sag mir den Punkt noch einmal ganz kurz.';
+        convo.push({ role: 'assistant', content: answer });
+        await speakWally(answer);
+      } catch (_) {
+        if (provider === 'xai') {
+          await speakWally('Ich erreiche xAI gerade nicht. Bitte pruefe Modell oder API-Key und versuche es erneut.');
+        } else {
+          tryLoopListen(250);
+        }
+      } finally {
+        isThinking = false;
+      }
+    }
+
+    async function askWallyXaiFromAudio(blob) {
+      if (!blob || !sessionApiKey) return;
+      if (isThinking) return;
+
+      isThinking = true;
+      try {
+        const audioBase64 = await blobToBase64(blob);
+        const payload = {
+          apiKey: sessionApiKey,
+          history: convo.slice(-6),
+          audioBase64,
+          instructions: 'Du bist WALLY, ein Spezialagent fuer Autohaus und Fleet. Antworte auf Deutsch in maximal 2 kurzen Saetzen, konkret und ohne Wiederholung.'
+        };
+        const res = await fetchWithTimeout('/api/xai/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }, 26000);
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`/api/xai/turn ${res.status}: ${t.slice(0, 180)}`);
+        }
+        const data = await res.json();
+        const transcript = (data?.transcript || '').trim();
+        const answer = (data?.text || '').trim() || 'Ich habe keine klare Antwort bekommen.';
+
+        convo.push({ role: 'user', content: transcript || '(Voice input)' });
+        convo.push({ role: 'assistant', content: answer });
+
+        if (data?.audioBase64) {
+          await playPcm16Base64(data.audioBase64, 24000);
+        } else {
+          await speakWally(answer);
+        }
+      } catch (err) {
+        const msg = String(err?.message || '');
+        let spoken = 'xAI antwortet gerade nicht. Bitte pruefe Server und API-Key.';
+        if (msg.includes('/api/xai/turn 404') || msg.includes('/api/xai/turn 501')) {
+          spoken = 'Der lokale xAI Server laeuft nicht auf diesem Port.';
+        } else if (msg.includes('/api/xai/turn 400')) {
+          spoken = 'xAI Anfrage ungueltig. Bitte API Key und Audio pruefen.';
+        } else if (msg.includes('/api/xai/turn 500')) {
+          const detail = msg.split('/api/xai/turn 500:')[1] || '';
+          const compact = detail.replace(/[{}"]/g, ' ').replace(/\s+/g, ' ').trim();
+          spoken = compact
+            ? `Der xAI Proxy meldet: ${compact.slice(0, 140)}`
+            : 'Der xAI Proxy hat einen Serverfehler geliefert.';
+        }
+        await speakWally(spoken);
+      } finally {
+        isThinking = false;
+      }
+    }
+
+    async function transcribeAudio(blob) {
+      const fd = new FormData();
+      fd.append('model', PROVIDERS.openai.sttModel);
+      fd.append('file', blob, 'question.webm');
+      const data = await fetchJsonWithFallback({
+        primaryUrl: '/api/stt',
+        fallbackUrl: 'https://api.openai.com/v1/audio/transcriptions',
+        options: {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${sessionApiKey}`
+          },
+          body: fd
+        }
+      });
+      return (data.text || '').trim();
+    }
+
+    function transcribeViaBrowser() {
+      return new Promise((resolve, reject) => {
+        if (!SpeechRecognitionCtor) {
+          reject(new Error('SpeechRecognition not supported'));
+          return;
+        }
+        const rec = new SpeechRecognitionCtor();
+        rec.lang = 'de-DE';
+        rec.interimResults = false;
+        rec.continuous = false;
+        rec.maxAlternatives = 1;
+        let done = false;
+        const finish = (fn, value) => {
+          if (done) return;
+          done = true;
+          fn(value);
+        };
+        rec.onresult = (ev) => {
+          const text = ev.results?.[0]?.[0]?.transcript || '';
+          finish(resolve, text.trim());
+        };
+        rec.onerror = (ev) => finish(reject, new Error(`SpeechRecognition: ${ev.error || 'unknown'}`));
+        rec.onnomatch = () => finish(resolve, '');
+        rec.onend = () => finish(resolve, '');
+        rec.start();
+        setTimeout(() => {
+          try { rec.stop(); } catch (_) {}
+        }, 2600);
+      });
+    }
+
+    async function startVoiceQuestion() {
+      if (isListening || isSpeaking) return;
+      if (!sessionApiKey) return;
+
+      isListening = true;
+      portrait.classList.add('is-listening');
+      try {
+        let heard = '';
+        await ensureMicStream();
+        const rec = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
+        const chunks = [];
+        rec.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size) chunks.push(ev.data);
+        };
+        const stopped = new Promise((resolve) => {
+          rec.onstop = () => resolve();
+        });
+        rec.start();
+        setTimeout(() => {
+          if (rec.state !== 'inactive') rec.stop();
+        }, 1800);
+        await stopped;
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        if (provider === 'xai') {
+          await askWallyXaiFromAudio(blob);
+          isListening = false;
+          portrait.classList.remove('is-listening');
+          if (conversationOn) tryLoopListen(220);
+          return;
+        }
+        heard = await transcribeAudio(blob);
+        isListening = false;
+        portrait.classList.remove('is-listening');
+        if (!heard) {
+          if (provider !== 'xai') tryLoopListen(180);
+          return;
+        }
+        await askWally(heard);
+      } catch (_) {
+        isListening = false;
+        portrait.classList.remove('is-listening');
+        if (provider !== 'xai') tryLoopListen(260);
+      }
+    }
+
+    document.getElementById('btnUseKey').addEventListener('click', () => {
+      provider = providerSelect.value === 'xai' ? 'xai' : 'openai';
+      sessionApiKey = apiKeyInput.value.trim();
+      if (sessionApiKey) convo.length = 0;
+    });
+
+    providerSelect.addEventListener('change', () => {
+      provider = providerSelect.value === 'xai' ? 'xai' : 'openai';
+      conversationOn = false;
+      xaiLoopEnabled = false;
+      stopXaiRecognition();
+      stopMicStream();
+      setToggleLabel();
+      convo.length = 0;
+    });
+
+    btnTalkToggle.addEventListener('click', () => {
+      if (!sessionApiKey) return;
+      conversationOn = !conversationOn;
+      if (!conversationOn) {
+        xaiLoopEnabled = false;
+        stopXaiRecognition();
+        stopMicStream();
+      }
+      setToggleLabel();
+      if (conversationOn) {
+        if (provider === 'xai') {
+          tryLoopListen(0);
+        } else {
+          tryLoopListen(50);
+        }
+      }
+    });
+
+    mascot.addEventListener('click', () => {
+      if (!conversationOn) return;
+      if (provider === 'xai') {
+        tryLoopListen(0);
+      } else {
+        tryLoopListen(30);
+      }
+    });
+
+    mascot.addEventListener('touchstart', () => {
+      if (!conversationOn) return;
+      if (provider === 'xai') {
+        tryLoopListen(0);
+      } else {
+        tryLoopListen(30);
+      }
+    }, { passive: true });
+
+    setToggleLabel();
+  </script>
+</body>
+</html>

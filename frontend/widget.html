@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>WALLY Widget</title>
+  <style>
+    :root {
+      --bg: #071018;
+      --panel: rgba(7, 16, 24, 0.86);
+      --line: rgba(167, 223, 255, 0.35);
+      --ink: #eef8ff;
+      --accent: #6be5ff;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+
+    body {
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(650px 420px at 18% 14%, rgba(107, 229, 255, 0.15), transparent 60%),
+        radial-gradient(650px 420px at 84% 82%, rgba(255, 122, 122, 0.14), transparent 60%),
+        linear-gradient(140deg, #071018, #0b1d2a);
+      color: var(--ink);
+      display: grid;
+      place-items: center;
+      padding: 18px;
+    }
+
+    .widget {
+      width: min(360px, 100%);
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+      animation: rise .35s ease-out;
+    }
+
+    .portrait {
+      position: relative;
+      width: 240px;
+      height: 240px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      border: 1px solid rgba(107, 229, 255, 0.24);
+      background:
+        radial-gradient(210px 210px at 50% 32%, rgba(107, 229, 255, 0.18), transparent 72%),
+        rgba(255, 255, 255, 0.02);
+    }
+
+    .pulse {
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      border-radius: 999px;
+      border: 1px solid rgba(107, 229, 255, 0.3);
+      animation: pulse 2.8s infinite ease-out;
+    }
+
+    .wally-svg {
+      width: 196px;
+      filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.35));
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .w-line {
+      stroke: #111;
+      stroke-width: 6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .w-head,
+    .w-ear,
+    .w-eye-ring { fill: #fcfeff; stroke: #111; stroke-width: 6; }
+    .w-pupil { fill: #0d1318; }
+    .w-highlight { fill: #fff; }
+
+    .w-mouth-open { opacity: 0; transform-box: fill-box; transform-origin: center; }
+    .portrait.is-speaking .w-mouth-smile { opacity: 0; }
+    .portrait.is-speaking .w-mouth-open {
+      opacity: 1;
+      animation: talkMouth .16s ease-in-out infinite alternate;
+    }
+
+    .portrait.is-speaking .w-eye-left-pupil,
+    .portrait.is-speaking .w-eye-right-pupil {
+      animation: eyeShift 1.1s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .portrait.is-speaking .w-blink {
+      animation: blink 2.2s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center top;
+    }
+
+    .portrait.is-listening {
+      border-color: rgba(107, 229, 255, 0.55);
+      box-shadow: 0 0 26px rgba(107, 229, 255, 0.24);
+    }
+
+    .portrait.is-listening .w-eye-ring {
+      stroke: #5ee4ff;
+      filter: drop-shadow(0 0 8px rgba(94, 228, 255, 0.45));
+    }
+
+    .controls {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    button {
+      min-height: 42px;
+      border-radius: 11px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.04);
+      font: inherit;
+      cursor: pointer;
+      transition: transform .14s ease, border-color .2s ease, background-color .2s ease;
+    }
+
+    button:hover {
+      border-color: rgba(107, 229, 255, 0.5);
+      background: rgba(107, 229, 255, 0.14);
+      transform: translateY(-1px);
+    }
+
+    #btnTalk[data-on="true"] {
+      border-color: rgba(107, 229, 255, 0.65);
+      background: linear-gradient(180deg, rgba(107, 229, 255, 0.25), rgba(107, 229, 255, 0.1));
+    }
+
+    .hint {
+      width: 100%;
+      font-size: 12px;
+      color: rgba(238, 248, 255, 0.72);
+      text-align: center;
+      min-height: 16px;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.88); opacity: 0.8; }
+      70% { transform: scale(1.08); opacity: 0.16; }
+      100% { transform: scale(1.08); opacity: 0; }
+    }
+
+    @keyframes talkMouth { from { transform: scaleY(0.7); } to { transform: scaleY(1.45); } }
+    @keyframes eyeShift { 0% { transform: translateX(0); } 50% { transform: translateX(1px); } 100% { transform: translateX(-1px); } }
+    @keyframes blink {
+      0%, 90%, 100% { transform: scaleY(0.01); opacity: 0; }
+      93% { transform: scaleY(1); opacity: 1; }
+      96% { transform: scaleY(1); opacity: 1; }
+    }
+
+    @keyframes rise { from { transform: translateY(6px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <section class="widget" aria-label="WALLY Widget">
+    <div id="portrait" class="portrait">
+      <span class="pulse" aria-hidden="true"></span>
+      <svg id="mascot" class="wally-svg" viewBox="0 0 520 520" role="img" aria-label="WALLY Kopf">
+        <path class="w-line" d="M262 114 C262 44 270 10 316 10 C350 10 360 42 340 58 C319 75 293 64 301 43" />
+        <path class="w-ear" d="M74 232 C43 238 24 262 24 292 C24 322 43 346 74 350 Z" />
+        <path class="w-ear" d="M446 232 C477 238 496 262 496 292 C496 322 477 346 446 350 Z" />
+        <path class="w-head" d="M98 148 C136 116 202 102 260 102 C322 102 384 114 420 146 C446 170 456 210 456 262 C456 314 446 354 420 378 C386 410 326 422 260 422 C188 422 134 410 98 380 C74 360 64 322 64 264 C64 206 74 170 98 148 Z" />
+        <path class="w-line" d="M446 304 C438 328 436 350 446 372 C452 386 462 394 474 398" />
+
+        <circle class="w-eye-ring" cx="178" cy="276" r="72" />
+        <circle class="w-eye-ring" cx="342" cy="276" r="72" />
+
+        <g class="w-eye-left-pupil">
+          <circle class="w-pupil" cx="178" cy="276" r="38" />
+          <circle class="w-highlight" cx="164" cy="259" r="12" />
+        </g>
+        <g class="w-eye-right-pupil">
+          <circle class="w-pupil" cx="342" cy="276" r="38" />
+          <circle class="w-highlight" cx="328" cy="259" r="12" />
+        </g>
+
+        <path class="w-line w-mouth-smile" d="M220 340 C236 358 266 358 282 340" />
+        <g class="w-mouth-open">
+          <path d="M220 340 C236 364 266 364 282 340 C268 352 236 352 220 340 Z" fill="#1a2128" stroke="#111" stroke-width="4" />
+        </g>
+
+        <rect class="w-blink" x="126" y="236" width="104" height="8" rx="4" fill="#fcfeff" />
+        <rect class="w-blink" x="290" y="236" width="104" height="8" rx="4" fill="#fcfeff" />
+      </svg>
+    </div>
+
+    <div class="controls">
+      <button id="btnTalk" data-on="false">Start</button>
+    </div>
+
+    <div id="hint" class="hint">WALLY Autoverkauf Widget. Start druecken und sprechen.</div>
+  </section>
+
+  <script>
+    const portrait = document.getElementById('portrait');
+    const mascot = document.getElementById('mascot');
+    const btnTalk = document.getElementById('btnTalk');
+    const hint = document.getElementById('hint');
+    const query = new URLSearchParams(window.location.search);
+    const API_BASE = String(window.WALLY_API_BASE || query.get('api') || '').trim().replace(/\/+$/, '');
+    const DATA_URL = String(query.get('data') || '').trim();
+    const MAX_CATALOG_CONTEXT_CHARS = 6000;
+
+    let conversationOn = false;
+    let isListening = false;
+    let isSpeaking = false;
+    let isThinking = false;
+    let micStream = null;
+    let audioCtx = null;
+    let activeSource = null;
+    let activeFetch = null;
+    let catalogContext = '';
+    let catalogLoaded = false;
+    const convo = [];
+    let lastAnswer = '';
+
+    function setHint(text) {
+      hint.textContent = text || '';
+    }
+
+    function apiUrl(path) {
+      if (!API_BASE) return path;
+      return `${API_BASE}${path}`;
+    }
+
+    function normalizeValue(v) {
+      if (v == null) return '';
+      if (typeof v === 'string') return v.trim();
+      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+      return '';
+    }
+
+    function pickFirst(item, keys) {
+      for (const key of keys) {
+        const val = normalizeValue(item && item[key]);
+        if (val) return val;
+      }
+      return '';
+    }
+
+    function compactCatalogLine(item, idx) {
+      const id = pickFirst(item, ['id', 'vehicleId', 'stock', 'stockNumber', 'vin']) || `item-${idx + 1}`;
+      const title = pickFirst(item, ['title', 'name', 'model', 'vehicle', 'label']);
+      const brand = pickFirst(item, ['brand', 'make', 'hersteller']);
+      const price = pickFirst(item, ['price', 'priceEur', 'preis', 'monthlyRate', 'rate']);
+      const fuel = pickFirst(item, ['fuel', 'kraftstoff', 'engine']);
+      const video = pickFirst(item, ['video', 'videoUrl', 'url', 'link']);
+      return [id, brand, title, price, fuel, video].filter(Boolean).join(' | ');
+    }
+
+    function buildCatalogContext(raw) {
+      const items = Array.isArray(raw)
+        ? raw
+        : (Array.isArray(raw && raw.items) ? raw.items : (Array.isArray(raw && raw.data) ? raw.data : []));
+      if (!items.length) return '';
+      const lines = items.slice(0, 35).map((item, idx) => compactCatalogLine(item || {}, idx)).filter(Boolean);
+      return lines.join('\n').slice(0, MAX_CATALOG_CONTEXT_CHARS);
+    }
+
+    async function ensureCatalogContext() {
+      if (catalogLoaded) return catalogContext;
+      catalogLoaded = true;
+      if (!DATA_URL) return '';
+      try {
+        const res = await fetch(DATA_URL, { cache: 'no-store' });
+        if (!res.ok) return '';
+        const raw = await res.json();
+        catalogContext = buildCatalogContext(raw);
+        return catalogContext;
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function setSpeaking(on) {
+      isSpeaking = !!on;
+      portrait.classList.toggle('is-speaking', !!on);
+    }
+
+    function setListening(on) {
+      isListening = !!on;
+      portrait.classList.toggle('is-listening', !!on);
+    }
+
+    function setToggleLabel() {
+      btnTalk.textContent = conversationOn ? 'Stop' : 'Start';
+      btnTalk.setAttribute('data-on', conversationOn ? 'true' : 'false');
+    }
+
+    function stopConversationWithHint(message) {
+      conversationOn = false;
+      setToggleLabel();
+      setListening(false);
+      stopActiveAudio();
+      abortActiveTurn();
+      stopMicStream();
+      setHint(message);
+    }
+
+    function stopActiveAudio() {
+      if (activeSource) {
+        try { activeSource.stop(); } catch (_) {}
+        activeSource = null;
+      }
+      if ('speechSynthesis' in window) {
+        try { window.speechSynthesis.cancel(); } catch (_) {}
+      }
+      setSpeaking(false);
+    }
+
+    function speakText(text) {
+      return new Promise((resolve) => {
+        const msg = String(text || '').trim();
+        if (!msg) {
+          resolve();
+          return;
+        }
+        if (!('speechSynthesis' in window)) {
+          resolve();
+          return;
+        }
+        try { window.speechSynthesis.cancel(); } catch (_) {}
+        const utter = new SpeechSynthesisUtterance(msg);
+        utter.lang = 'de-DE';
+        utter.rate = 1.06;
+        utter.pitch = 1.0;
+        utter.onstart = () => setSpeaking(true);
+        utter.onend = () => {
+          setSpeaking(false);
+          resolve();
+        };
+        utter.onerror = () => {
+          setSpeaking(false);
+          resolve();
+        };
+        window.speechSynthesis.speak(utter);
+      });
+    }
+
+    function abortActiveTurn() {
+      if (!activeFetch) return;
+      try { activeFetch.abort(); } catch (_) {}
+      activeFetch = null;
+    }
+
+    async function ensureMicStream() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia unavailable');
+      }
+      if (!micStream || !micStream.active) {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      return micStream;
+    }
+
+    function stopMicStream() {
+      if (!micStream) return;
+      try { micStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      micStream = null;
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const value = String(reader.result || '');
+          const idx = value.indexOf(',');
+          resolve(idx >= 0 ? value.slice(idx + 1) : value);
+        };
+        reader.onerror = () => reject(new Error('blob->base64 failed'));
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function base64ToUint8(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+
+    async function playPcm16Base64(base64Audio, sampleRate) {
+      if (!base64Audio) return;
+      stopActiveAudio();
+      const bytes = base64ToUint8(base64Audio);
+      const frameLen = Math.floor(bytes.byteLength / 2);
+      if (!frameLen) return;
+
+      const pcm = new Int16Array(bytes.buffer, bytes.byteOffset, frameLen);
+      const float32 = new Float32Array(frameLen);
+      for (let i = 0; i < frameLen; i++) float32[i] = pcm[i] / 32768;
+
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') {
+        try { await audioCtx.resume(); } catch (_) {}
+      }
+
+      const audioBuffer = audioCtx.createBuffer(1, frameLen, sampleRate || 24000);
+      audioBuffer.copyToChannel(float32, 0);
+      const source = audioCtx.createBufferSource();
+      activeSource = source;
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+
+      await new Promise((resolve) => {
+        setSpeaking(true);
+        source.onended = () => {
+          if (activeSource === source) activeSource = null;
+          setSpeaking(false);
+          resolve();
+        };
+        source.start();
+      });
+    }
+
+    function scheduleNext(delay) {
+      if (!conversationOn) return;
+      if (isListening || isSpeaking || isThinking) return;
+      setTimeout(() => {
+        if (!conversationOn || isListening || isSpeaking || isThinking) return;
+        startVoiceTurn();
+      }, Math.max(0, delay || 0));
+    }
+
+    async function startVoiceTurn() {
+      if (!conversationOn || isListening || isSpeaking || isThinking) return;
+      if (!window.MediaRecorder) {
+        setHint('MediaRecorder wird in diesem Browser nicht unterstuetzt.');
+        conversationOn = false;
+        setToggleLabel();
+        return;
+      }
+
+      try {
+        setListening(true);
+        await ensureMicStream();
+
+        let recorder = null;
+        try {
+          recorder = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
+        } catch (_) {
+          recorder = new MediaRecorder(micStream);
+        }
+        const chunks = [];
+        recorder.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size) chunks.push(ev.data);
+        };
+
+        const stopped = new Promise((resolve) => {
+          recorder.onstop = () => resolve();
+        });
+
+        recorder.start();
+        setTimeout(() => {
+          if (recorder.state !== 'inactive') recorder.stop();
+        }, 2200);
+
+        await stopped;
+        setListening(false);
+        if (!conversationOn) return;
+
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        isThinking = true;
+        const currentCatalogContext = await ensureCatalogContext();
+
+        const payload = {
+          history: convo.slice(-6),
+          audioBase64: await blobToBase64(blob)
+        };
+        if (currentCatalogContext) payload.catalogContext = currentCatalogContext;
+
+        const controller = new AbortController();
+        activeFetch = controller;
+        const res = await fetch(apiUrl('/api/xai/turn'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        if (activeFetch === controller) activeFetch = null;
+
+        if (!res.ok) {
+          const t = await res.text().catch(() => '');
+          throw new Error(`${apiUrl('/api/xai/turn')} ${res.status}: ${t.slice(0, 180)}`);
+        }
+
+        const data = await res.json();
+        const transcript = (data && data.transcript ? String(data.transcript) : '').trim();
+        const answer = (data && data.text ? String(data.text) : '').trim() || 'Ich habe keine klare Antwort bekommen.';
+        if (!transcript) {
+          setHint('Ich habe dich akustisch nicht klar verstanden. Sprich etwas langsamer und naeher am Mikro.');
+        }
+        if (transcript) {
+          convo.push({ role: 'user', content: transcript });
+        }
+        if (answer && answer !== lastAnswer) {
+          convo.push({ role: 'assistant', content: answer });
+          lastAnswer = answer;
+        }
+        setHint(answer);
+        if (data && data.audioBase64) {
+          await playPcm16Base64(String(data.audioBase64), 24000);
+        } else {
+          await speakText(answer);
+        }
+      } catch (err) {
+        if (String(err && err.name) === 'AbortError') {
+          return;
+        }
+        const msg = String((err && err.message) || 'Voice turn fehlgeschlagen.');
+        if (msg.includes('Missing API key')) {
+          stopConversationWithHint('Kein API-Key gefunden. Setze XAI_API_KEY im Backend oder nutze Set API Key.');
+        } else if (msg.includes('/api/xai/turn 400') || msg.includes('/api/xai/turn 500')) {
+          stopConversationWithHint(msg);
+        } else {
+          setHint(msg);
+        }
+      } finally {
+        activeFetch = null;
+        isThinking = false;
+        setListening(false);
+        if (conversationOn) scheduleNext(220);
+      }
+    }
+
+    btnTalk.addEventListener('click', () => {
+      conversationOn = !conversationOn;
+      setToggleLabel();
+
+      if (!conversationOn) {
+        setListening(false);
+        stopActiveAudio();
+        abortActiveTurn();
+        stopMicStream();
+        return;
+      }
+
+      scheduleNext(0);
+    });
+
+    mascot.addEventListener('click', () => {
+      if (!conversationOn) return;
+      stopActiveAudio();
+      abortActiveTurn();
+      scheduleNext(0);
+    });
+
+    setToggleLabel();
+  </script>
+</body>
+</html>

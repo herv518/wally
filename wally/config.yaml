@@ -1,0 +1,21 @@
+index:
+  include_ext:
+  - .html
+  - .htm
+  - .css
+  - .js
+  - .md
+  - .txt
+  - .json
+  - .yml
+  - .yaml
+  exclude_dirs:
+  - .git
+  - node_modules
+  - .venv
+  - __pycache__
+  - .DS_Store
+  max_file_mb: 12
+assistant:
+  max_context_chars: 14000
+  tool_result_char_limit: 16000
