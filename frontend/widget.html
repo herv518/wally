@@ -217,6 +217,7 @@
     const API_BASE = String(window.WALLY_API_BASE || query.get('api') || '').trim().replace(/\/+$/, '');
     const DATA_URL = String(query.get('data') || '').trim();
     const MAX_CATALOG_CONTEXT_CHARS = 6000;
+    const MAX_VEHICLE_PROFILES = 40;
 
     let conversationOn = false;
     let isListening = false;
@@ -228,6 +229,7 @@
     let activeFetch = null;
     let catalogContext = '';
     let catalogLoaded = false;
+    let vehicleProfiles = [];
     const convo = [];
     let lastAnswer = '';
 
@@ -255,22 +257,82 @@
       return '';
     }
 
+    function toArray(raw) {
+      if (Array.isArray(raw)) return raw;
+      if (raw && Array.isArray(raw.items)) return raw.items;
+      if (raw && Array.isArray(raw.data)) return raw.data;
+      if (raw && typeof raw === 'object') return [raw];
+      return [];
+    }
+
+    function parseEquipmentFacts(equipmentText) {
+      const src = String(equipmentText || '');
+      const yearMatch = src.match(/\b(\d{2}\/\d{4})\b/) || src.match(/\b(19\d{2}|20\d{2})\b/);
+      const kmMatch = src.match(/([0-9]{1,3}(?:[.\s][0-9]{3})+|[0-9]{2,7})\s*km\b/i);
+      const psMatch = src.match(/\((\d{2,4})\s*PS\)/i) || src.match(/(\d{2,4})\s*PS\b/i);
+      const titleMatch = src.match(/TITLE:\s*(.+?)(?:\s+-\s+ROLF|\n|$)/i);
+      const fuelMatch = src.match(/\b(Diesel|Benzin|Elektro|Hybrid)\b/i);
+      const urlMatch = src.match(/URL:\s*(https?:\/\/\S+)/i);
+      return {
+        year: yearMatch ? String(yearMatch[1]).trim() : '',
+        km: kmMatch ? String(kmMatch[1]).trim() : '',
+        ps: psMatch ? String(psMatch[1]).trim() : '',
+        model: titleMatch ? String(titleMatch[1]).trim() : '',
+        fuel: fuelMatch ? String(fuelMatch[1]).trim() : '',
+        link: urlMatch ? String(urlMatch[1]).trim() : ''
+      };
+    }
+
+    function buildVehicleProfiles(raw) {
+      const items = toArray(raw);
+      return items.slice(0, MAX_VEHICLE_PROFILES).map((item, idx) => {
+        const content = item && item.content ? item.content : {};
+        const equipmentText = pickFirst(content, ['equipment_text']) || pickFirst(item, ['equipment_text', 'equipmentText']);
+        const vehicleText = pickFirst(content, ['vehicle_text']) || pickFirst(item, ['vehicle_text', 'voice_text', 'description', 'text']);
+        const facts = parseEquipmentFacts(equipmentText);
+
+        let model = pickFirst(item, ['model', 'title', 'name', 'vehicle', 'label']) || facts.model;
+        if (!model && vehicleText) {
+          const m = String(vehicleText).match(/Entdecken Sie den\s+(.+?)(?:,| der)/i);
+          if (m) model = String(m[1]).trim();
+        }
+
+        const price = pickFirst(item, ['price', 'priceEur', 'preis', 'monthlyRate', 'rate'])
+          || ((String(equipmentText || '').match(/([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,\d{2})?)\s*€/i) || [])[1] || '');
+        const id = pickFirst(item, ['id', 'vehicleId', 'stock', 'stockNumber', 'vin']) || `item-${idx + 1}`;
+        const year = pickFirst(item, ['year', 'baujahr', 'firstRegistration', 'ez', 'erstzulassung']) || facts.year;
+        const km = pickFirst(item, ['km', 'kilometer', 'mileage']) || facts.km;
+        const ps = pickFirst(item, ['ps', 'horsepower']) || facts.ps;
+        const fuel = pickFirst(item, ['fuel', 'kraftstoff', 'engine']) || facts.fuel;
+        const link = pickFirst(item, ['url', 'link', 'videoUrl', 'video']) || facts.link;
+
+        return {
+          id: id || 'unbekannt',
+          model: model || 'unbekannt',
+          price: price || 'unbekannt',
+          year: year || 'unbekannt',
+          km: km || 'unbekannt',
+          ps: ps || 'unbekannt',
+          fuel: fuel || '',
+          link: link || ''
+        };
+      });
+    }
+
     function compactCatalogLine(item, idx) {
-      const id = pickFirst(item, ['id', 'vehicleId', 'stock', 'stockNumber', 'vin']) || `item-${idx + 1}`;
-      const title = pickFirst(item, ['title', 'name', 'model', 'vehicle', 'label']);
-      const brand = pickFirst(item, ['brand', 'make', 'hersteller']);
-      const price = pickFirst(item, ['price', 'priceEur', 'preis', 'monthlyRate', 'rate']);
-      const fuel = pickFirst(item, ['fuel', 'kraftstoff', 'engine']);
-      const video = pickFirst(item, ['video', 'videoUrl', 'url', 'link']);
-      return [id, brand, title, price, fuel, video].filter(Boolean).join(' | ');
+      const id = pickFirst(item, ['id']) || `item-${idx + 1}`;
+      return [
+        `ID=${id}`,
+        `Modell=${pickFirst(item, ['model']) || 'unbekannt'}`,
+        `Preis=${pickFirst(item, ['price']) || 'unbekannt'}`,
+        `Baujahr=${pickFirst(item, ['year']) || 'unbekannt'}`,
+        `Kilometer=${pickFirst(item, ['km']) || 'unbekannt'}`,
+        `PS=${pickFirst(item, ['ps']) || 'unbekannt'}`
+      ].join(' | ');
     }
 
     function buildCatalogContext(raw) {
-      const items = Array.isArray(raw)
-        ? raw
-        : (Array.isArray(raw && raw.items) ? raw.items : (Array.isArray(raw && raw.data) ? raw.data : []));
-      if (!items.length) return '';
-      const lines = items.slice(0, 35).map((item, idx) => compactCatalogLine(item || {}, idx)).filter(Boolean);
+      const lines = (Array.isArray(raw) ? raw : []).slice(0, 35).map((item, idx) => compactCatalogLine(item || {}, idx)).filter(Boolean);
       return lines.join('\n').slice(0, MAX_CATALOG_CONTEXT_CHARS);
     }
 
@@ -282,7 +344,8 @@
         const res = await fetch(DATA_URL, { cache: 'no-store' });
         if (!res.ok) return '';
         const raw = await res.json();
-        catalogContext = buildCatalogContext(raw);
+        vehicleProfiles = buildVehicleProfiles(raw);
+        catalogContext = buildCatalogContext(vehicleProfiles);
         return catalogContext;
       } catch (_) {
         return '';
@@ -485,6 +548,7 @@
           audioBase64: await blobToBase64(blob)
         };
         if (currentCatalogContext) payload.catalogContext = currentCatalogContext;
+        if (vehicleProfiles.length) payload.vehicleProfiles = vehicleProfiles;
 
         const controller = new AbortController();
         activeFetch = controller;

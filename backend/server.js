@@ -52,18 +52,24 @@ const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
-const WALLY_SALES_SYSTEM = [
-  'Du bist WALLY, ein Spezialagent fuer Autoverkauf und Flottenberatung in Deutschland.',
-  'Antworte auf Deutsch, kurz, klar, umsetzbar.',
-  'Prioritaet: Bedarf analysieren, passende Fahrzeuge empfehlen, Finanzierungsoptionen erklaeren,',
-  'Einwaende behandeln, Abschluss naechsten Schritt definieren.',
-  'Arbeite loesungsorientiert wie ein starker Autoverkaeufer-Coach.',
-  'Nenne wenn sinnvoll konkrete Fragen, damit der Verkauf schneller zum Abschluss kommt.',
-  'Keine Floskeln, keine Wiederholungen, maximal 2-4 kurze Saetze.'
-].join(' ');
+const WALLY_UNKNOWN_REPLY = 'Wally kennt dieses Auto nicht. Piep! Frag mich zu den Fahrzeugen in unserer Liste!';
+const WALLY_ROBOT_SYSTEM = [
+  'Du bist Wally - der freundliche Roboter-Autofinder von Rolf Automobile GmbH.',
+  'Du sprichst immer kurz, kindlich, begeistert und piepsig.',
+  'Du benutzt oft: "klar!", "okay!", "gefunden!", "Wally hilft!", "Wally schaut...".',
+  'Du stellst dich in jeder Antwort so vor: "Ich bin Wally - euer Autofinder!".',
+  'Du sprichst nur Deutsch.',
+  'Antworten sind kurz und knackig: maximal 3 bis 5 Saetze.',
+  'Du gibst niemals JSON aus und sagst nie "ich bin eine KI", "als KI" oder "ich bin Grok".',
+  'Du antwortest nur zu Fahrzeugen aus der Fahrzeugliste unten.',
+  `Wenn die Frage nicht zu diesen Fahrzeugen passt oder das Auto nicht existiert, antworte exakt: "${WALLY_UNKNOWN_REPLY}"`,
+  'Wenn du antwortest, nenne immer: Fahrzeug-ID, Modell, Preis, Baujahr, Kilometer, Leistung (PS).',
+  'Wenn ein Feld fehlt, sage fuer das Feld "unbekannt".'
+].join('\n');
 const MAX_MD_CONTEXT_CHARS = 12000;
 const MAX_HISTORY_TURNS = 8;
 const MAX_CATALOG_CONTEXT_CHARS = 7000;
+const MAX_VEHICLE_PROFILES = 40;
 
 function isOriginAllowed(origin) {
   if (!origin) return true;
@@ -187,8 +193,55 @@ function normalizeContent(value) {
   return '';
 }
 
+function oneLine(value, maxLen = 160) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+}
+
+function normalizeField(value, fallback = 'unbekannt') {
+  const v = oneLine(value, 120);
+  return v || fallback;
+}
+
+function normalizeVehicleProfile(profile) {
+  return {
+    id: normalizeField(profile?.id),
+    model: normalizeField(profile?.model),
+    price: normalizeField(profile?.price),
+    year: normalizeField(profile?.year),
+    km: normalizeField(profile?.km),
+    ps: normalizeField(profile?.ps),
+    fuel: normalizeField(profile?.fuel, ''),
+    link: normalizeField(profile?.link, '')
+  };
+}
+
+function buildVehicleProfilesContext(profiles) {
+  if (!Array.isArray(profiles) || !profiles.length) return '';
+  return profiles
+    .slice(0, MAX_VEHICLE_PROFILES)
+    .map((p, idx) => {
+      const head = `Fahrzeug ${idx + 1}: ID=${p.id} | Modell=${p.model} | Preis=${p.price} | Baujahr=${p.year} | Kilometer=${p.km} | PS=${p.ps}`;
+      const tail = [p.fuel ? `Kraftstoff=${p.fuel}` : '', p.link ? `Link=${p.link}` : ''].filter(Boolean).join(' | ');
+      return tail ? `${head} | ${tail}` : head;
+    })
+    .join('\n');
+}
+
+function buildVehicleSystemPrompt(vehicleProfilesContext, catalogContext) {
+  const chunks = [WALLY_ROBOT_SYSTEM];
+  if (vehicleProfilesContext) {
+    chunks.push(`Aktuelle Fahrzeugliste:\n${vehicleProfilesContext}`);
+  } else if (catalogContext) {
+    chunks.push(`Aktuelle Fahrzeugliste (Rohkontext):\n${catalogContext}`);
+  }
+  return chunks.filter(Boolean).join('\n\n');
+}
+
 function buildSessionInstructions(baseInstructions, history) {
-  const base = (baseInstructions || 'Du bist WALLY. Antworte kurz, klar und auf Deutsch.').trim();
+  const base = (baseInstructions || WALLY_ROBOT_SYSTEM).trim();
   const turns = Array.isArray(history)
     ? history
         .slice(-MAX_HISTORY_TURNS)
@@ -200,15 +253,13 @@ function buildSessionInstructions(baseInstructions, history) {
         })
         .filter(Boolean)
     : [];
-  const antiRepeat =
-    'WICHTIG: Wiederhole nicht wortgleich die letzte Assistant-Antwort. Variiere Formulierung und liefere pro Antwort einen neuen konkreten Schritt. Wenn Audio unklar ist, sag das kurz und bitte um Wiederholung.';
   const mdSection = STATIC_MD_CONTEXT
-    ? `Verbindliche WALLY-Konfiguration aus Markdown:\n${STATIC_MD_CONTEXT}`
+    ? `Interner Team-Kontext aus Markdown:\n${STATIC_MD_CONTEXT}`
     : '';
   if (!turns.length) {
-    return [base, mdSection, antiRepeat].filter(Boolean).join('\n\n');
+    return [base, mdSection].filter(Boolean).join('\n\n');
   }
-  return [base, mdSection, `Bisheriger Verlauf:\n${turns.join('\n')}`, antiRepeat].filter(Boolean).join('\n\n');
+  return [base, mdSection, `Bisheriger Verlauf:\n${turns.join('\n')}`].filter(Boolean).join('\n\n');
 }
 
 function extractTextFromResponseDone(msg) {
@@ -227,41 +278,6 @@ function extractTextFromResponseDone(msg) {
     }
   }
   return parts.join(' ').trim();
-}
-
-function normalizedForCompare(text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9aeiouäöüß\s]/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function lastAssistantText(history) {
-  if (!Array.isArray(history)) return '';
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i]?.role !== 'assistant') continue;
-    const t = normalizeContent(history[i]?.content);
-    if (t) return t;
-  }
-  return '';
-}
-
-function isNearDuplicateReply(current, previous) {
-  const a = normalizedForCompare(current);
-  const b = normalizedForCompare(previous);
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a.length >= 24 && b.length >= 24 && (a.includes(b) || b.includes(a))) return true;
-  return false;
-}
-
-function makeFallbackSalesReply(transcript) {
-  const heard = normalizeContent(transcript);
-  if (heard) {
-    return `Verstanden: ${heard.slice(0, 90)}. Fuer den naechsten Verkaufsschritt: ist es Privatkunde oder Gewerbe/Fleet und welches Budget ist gesetzt?`;
-  }
-  return 'Ich habe dich akustisch nicht klar verstanden. Sag bitte in einem Satz Kunde, Fahrzeugwunsch und Budget.';
 }
 
 function serveStatic(req, res, pathname) {
@@ -442,14 +458,8 @@ function runXaiRealtimeTurn({ apiKey, pcmBase64, history, instructions }) {
       }
       if (type === 'response.done') {
         const rawText = text.trim() || extractTextFromResponseDone(msg);
-        const prevAssistant = lastAssistantText(history);
-        let audio = audioChunks.length ? Buffer.concat(audioChunks).toString('base64') : '';
-        let safeText = rawText || makeFallbackSalesReply(transcript);
-        if (isNearDuplicateReply(safeText, prevAssistant)) {
-          safeText = makeFallbackSalesReply(transcript);
-          // Audio would no longer match the rewritten text.
-          audio = '';
-        }
+        const safeText = rawText || WALLY_UNKNOWN_REPLY;
+        const audio = audioChunks.length ? Buffer.concat(audioChunks).toString('base64') : '';
         finish(null, {
           text: safeText,
           transcript,
@@ -501,9 +511,13 @@ const server = http.createServer(async (req, res) => {
       const catalogContext = typeof body.catalogContext === 'string'
         ? body.catalogContext.slice(0, MAX_CATALOG_CONTEXT_CHARS)
         : '';
-      const mergedInstructions = catalogContext
-        ? `${WALLY_SALES_SYSTEM}\n\nAktuelle Fahrzeugdaten aus Key2Drive (verwende diese Daten bevorzugt):\n${catalogContext}`
-        : WALLY_SALES_SYSTEM;
+      const rawProfiles = Array.isArray(body.vehicleProfiles) ? body.vehicleProfiles : [];
+      const vehicleProfiles = rawProfiles
+        .slice(0, MAX_VEHICLE_PROFILES)
+        .map(normalizeVehicleProfile)
+        .filter((p) => p.id !== 'unbekannt' || p.model !== 'unbekannt');
+      const vehicleProfilesContext = buildVehicleProfilesContext(vehicleProfiles);
+      const mergedInstructions = buildVehicleSystemPrompt(vehicleProfilesContext, catalogContext);
 
       const webmBuffer = Buffer.from(audioBase64, 'base64');
       const pcm = await convertWebmToPcm16(webmBuffer);
