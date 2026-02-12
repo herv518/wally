@@ -1391,15 +1391,17 @@ function runXaiRealtimeTurn({ apiKey, pcmBase64, history, instructions, signal, 
         text += msg.delta;
         return;
       }
-      if (type === 'response.output_audio_transcript.delta' && typeof msg.delta === 'string') {
+      if ((type === 'response.output_audio_transcript.delta' || type === 'response.audio_transcript.delta') && typeof msg.delta === 'string') {
         audioTranscriptText += msg.delta;
         return;
       }
-      if (type === 'response.output_audio_transcript.done' && typeof msg.transcript === 'string' && !audioTranscriptText.trim()) {
+      if ((type === 'response.output_audio_transcript.done' || type === 'response.audio_transcript.done')
+        && typeof msg.transcript === 'string'
+        && !audioTranscriptText.trim()) {
         audioTranscriptText = msg.transcript.trim();
         return;
       }
-      if (type === 'response.output_audio.delta' && typeof msg.delta === 'string') {
+      if ((type === 'response.output_audio.delta' || type === 'response.audio.delta') && typeof msg.delta === 'string') {
         try {
           audioChunks.push(Buffer.from(msg.delta, 'base64'));
         } catch (_) {}
@@ -2031,6 +2033,7 @@ const server = http.createServer(async (req, res) => {
       apiKeyConfigured: hasXaiKey || hasOpenAiKey,
       apiProvider: hasXaiKey ? 'xai' : (hasOpenAiKey ? 'openai-fallback' : 'none'),
       xaiModel: XAI_MODEL || 'default',
+      xaiStreamAudio: XAI_STREAM_AUDIO,
       realtimeSessions: realtimeSessions.size,
       diag: {
         count: diag.count,
