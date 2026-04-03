@@ -92,8 +92,8 @@ const KEEPALIVE_INTERVAL_MS = Math.max(
 const KEEPALIVE_ENABLED = String(process.env.WALLY_KEEPALIVE_ENABLED || '1').trim() !== '0';
 const KEEPALIVE_URL = String(process.env.WALLY_KEEPALIVE_URL || '').trim();
 const DIAG_MAX_ENTRIES = Math.max(20, Math.min(500, Number(process.env.WALLY_DIAG_MAX_ENTRIES || 120)));
-const XAI_TURN_TIMEOUT_MS = Math.max(9000, Math.min(30000, Number(process.env.WALLY_XAI_TURN_TIMEOUT_MS || 16000)));
-const WALLY_FAST_TRANSCRIPT_MODE = String(process.env.WALLY_FAST_TRANSCRIPT_MODE || '0').trim() === '1';
+const XAI_TURN_TIMEOUT_MS = Math.max(9000, Math.min(14000, Number(process.env.WALLY_XAI_TURN_TIMEOUT_MS || 14000)));
+const WALLY_FAST_TRANSCRIPT_MODE = String(process.env.WALLY_FAST_TRANSCRIPT_MODE || '1').trim() !== '0';
 const REALTIME_SESSION_IDLE_MS = Math.max(15000, Math.min(10 * 60 * 1000, Number(process.env.WALLY_REALTIME_IDLE_MS || 2 * 60 * 1000)));
 const MAX_TURN_AUDIO_BASE64_CHARS = Math.max(120000, Math.min(8 * 1024 * 1024, Number(process.env.WALLY_MAX_TURN_AUDIO_BASE64_CHARS || 2 * 1024 * 1024)));
 const MAX_TURN_PCM_BASE64_CHARS = Math.max(120000, Math.min(24 * 1024 * 1024, Number(process.env.WALLY_MAX_TURN_PCM_BASE64_CHARS || 6 * 1024 * 1024)));

@@ -218,6 +218,12 @@
     const DATA_URL = String(query.get('data') || '').trim();
     const MAX_CATALOG_CONTEXT_CHARS = 6000;
     const MAX_VEHICLE_PROFILES = 40;
+    const TURN_HTTP_TIMEOUT_MS = 14000;
+    const FIRST_TURN_RECORD_MS = 1500;
+    const TURN_RECORD_MS = 1700;
+    const VAD_MIN_RECORD_MS = 420;
+    const VAD_SILENCE_MS = 240;
+    const VAD_RMS_THRESHOLD = 0.012;
 
     let conversationOn = false;
     let isListening = false;
@@ -433,6 +439,119 @@
       return micStream;
     }
 
+    function startAutoStopRecorder(recorder, stream, maxMs) {
+      let done = false;
+      let rafId = 0;
+      let stopTimer = 0;
+      let sourceNode = null;
+      let analyser = null;
+      let pcm = null;
+      let heardSpeech = false;
+      let silenceSince = 0;
+      let extendedForLateSpeech = false;
+      const startedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+      const nowMs = () => ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+
+      const cleanup = () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+        if (stopTimer) clearTimeout(stopTimer);
+        stopTimer = 0;
+        if (sourceNode) {
+          try { sourceNode.disconnect(); } catch (_) {}
+          sourceNode = null;
+        }
+        if (analyser) {
+          try { analyser.disconnect(); } catch (_) {}
+          analyser = null;
+        }
+      };
+
+      const stopRecorder = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        try {
+          if (recorder.state !== 'inactive') recorder.stop();
+        } catch (_) {}
+      };
+
+      const scheduleStopTimer = (delayMs) => {
+        if (stopTimer) clearTimeout(stopTimer);
+        stopTimer = setTimeout(() => {
+          if (!heardSpeech && !extendedForLateSpeech) {
+            extendedForLateSpeech = true;
+            scheduleStopTimer(520);
+            return;
+          }
+          stopRecorder();
+        }, Math.max(700, delayMs));
+      };
+
+      const timeoutMs = Number(maxMs);
+      if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+        scheduleStopTimer(timeoutMs);
+      }
+
+      try {
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtor || !stream) {
+          return () => {
+            done = true;
+            cleanup();
+          };
+        }
+        if (!audioCtx) audioCtx = new AudioCtor();
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        sourceNode = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.12;
+        pcm = new Float32Array(analyser.fftSize);
+        sourceNode.connect(analyser);
+
+        const loop = () => {
+          if (done) return;
+          try {
+            analyser.getFloatTimeDomainData(pcm);
+          } catch (_) {
+            stopRecorder();
+            return;
+          }
+          let sum = 0;
+          for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+          const rms = Math.sqrt(sum / pcm.length);
+          const elapsed = nowMs() - startedAt;
+          if (rms >= VAD_RMS_THRESHOLD) {
+            heardSpeech = true;
+            silenceSince = 0;
+          } else if (heardSpeech && elapsed >= VAD_MIN_RECORD_MS) {
+            if (!silenceSince) silenceSince = nowMs();
+            if ((nowMs() - silenceSince) >= VAD_SILENCE_MS) {
+              stopRecorder();
+              return;
+            }
+          }
+          rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+      } catch (_) {
+        return () => {
+          done = true;
+          cleanup();
+        };
+      }
+
+      return () => {
+        if (done) return;
+        done = true;
+        cleanup();
+      };
+    }
+
     function stopMicStream() {
       if (!micStream) return;
       try { micStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
@@ -511,6 +630,8 @@
         return;
       }
 
+      let turnTimedOut = false;
+      let turnTimeoutId = 0;
       try {
         setListening(true);
         await ensureMicStream();
@@ -530,12 +651,12 @@
           recorder.onstop = () => resolve();
         });
 
+        const recordMs = convo.length ? TURN_RECORD_MS : FIRST_TURN_RECORD_MS;
         recorder.start();
-        setTimeout(() => {
-          if (recorder.state !== 'inactive') recorder.stop();
-        }, 2200);
+        const cancelAutoStop = startAutoStopRecorder(recorder, micStream, recordMs);
 
         await stopped;
+        try { cancelAutoStop(); } catch (_) {}
         setListening(false);
         if (!conversationOn) return;
 
@@ -552,12 +673,18 @@
 
         const controller = new AbortController();
         activeFetch = controller;
+        turnTimeoutId = setTimeout(() => {
+          turnTimedOut = true;
+          try { controller.abort(); } catch (_) {}
+        }, TURN_HTTP_TIMEOUT_MS);
         const res = await fetch(apiUrl('/api/xai/turn'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
           signal: controller.signal
         });
+        if (turnTimeoutId) clearTimeout(turnTimeoutId);
+        turnTimeoutId = 0;
         if (activeFetch === controller) activeFetch = null;
 
         if (!res.ok) {
@@ -586,6 +713,9 @@
         }
       } catch (err) {
         if (String(err && err.name) === 'AbortError') {
+          if (turnTimedOut) {
+            setHint('WALLY braucht gerade zu lange. Bitte nochmal kurz fragen.');
+          }
           return;
         }
         const msg = String((err && err.message) || 'Voice turn fehlgeschlagen.');
@@ -597,6 +727,7 @@
           setHint(msg);
         }
       } finally {
+        if (turnTimeoutId) clearTimeout(turnTimeoutId);
         activeFetch = null;
         isThinking = false;
         setListening(false);
@@ -626,6 +757,7 @@
       scheduleNext(0);
     });
 
+    void ensureCatalogContext();
     setToggleLabel();
   </script>
 </body>
