@@ -1097,11 +1097,48 @@ function normalizeReplyKey(value) {
     .trim();
 }
 
+function answerKeySimilarity(left, right) {
+  const a = String(left || '').trim();
+  const b = String(right || '').trim();
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.92;
+  const aTokens = new Set(a.split(/\s+/).filter(Boolean));
+  const bTokens = new Set(b.split(/\s+/).filter(Boolean));
+  if (!aTokens.size || !bTokens.size) return 0;
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) overlap += 1;
+  }
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function extractRecentAssistantReplyKeys(history, limit = 4) {
+  const turns = Array.isArray(history) ? history : [];
+  const keys = [];
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const turn = turns[i] || {};
+    if (String(turn.role || '').toLowerCase() !== 'assistant') continue;
+    const key = normalizeReplyKey(normalizeContent(turn.content));
+    if (!key || keys.includes(key)) continue;
+    keys.push(key);
+    if (keys.length >= limit) break;
+  }
+  return keys;
+}
+
+function hasSimilarRecentReply(candidateKey, history, threshold = 0.78) {
+  if (!candidateKey) return false;
+  const recentKeys = extractRecentAssistantReplyKeys(history);
+  return recentKeys.some((key) => answerKeySimilarity(candidateKey, key) >= threshold);
+}
+
 function chooseReplyCandidate(deterministic, sanitizedModel, history) {
-  const prevKey = normalizeReplyKey(extractLatestAssistantReply(history));
   const deterministicKey = normalizeReplyKey(deterministic);
   const modelKey = normalizeReplyKey(sanitizedModel);
-  if (deterministicKey && prevKey && deterministicKey === prevKey && modelKey && modelKey !== prevKey) {
+  const deterministicRepeats = hasSimilarRecentReply(deterministicKey, history);
+  const modelRepeats = hasSimilarRecentReply(modelKey, history);
+  if (deterministicRepeats && modelKey && !modelRepeats) {
     return sanitizedModel;
   }
   return deterministic || sanitizedModel;
@@ -1110,9 +1147,7 @@ function chooseReplyCandidate(deterministic, sanitizedModel, history) {
 function avoidImmediateRepeat(candidate, history, focusedVehicle) {
   const nextKey = normalizeReplyKey(candidate);
   if (!nextKey) return candidate;
-  const lastAssistant = extractLatestAssistantReply(history);
-  const prevKey = normalizeReplyKey(lastAssistant);
-  if (!prevKey || prevKey !== nextKey) return candidate;
+  if (!hasSimilarRecentReply(nextKey, history)) return candidate;
   const v = focusedVehicle ? normalizeVehicleProfile(focusedVehicle) : null;
   if (v && v.model !== 'unbekannt') {
     const equipment = oneLine(v.equipmentText || v.vehicleText, 180);
