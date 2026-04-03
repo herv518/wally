@@ -134,10 +134,85 @@ const BRAND_ALIAS_LOOKUP = {
   alfaromeo: 'Alfa Romeo'
 };
 
+function isNetlifyHost(hostname) {
+  return String(hostname || '').toLowerCase().endsWith('.netlify.app');
+}
+
+function isNetlifyAliasHost(originHost, allowedHost) {
+  const origin = String(originHost || '').toLowerCase();
+  const allowed = String(allowedHost || '').toLowerCase();
+  if (!origin || !allowed) return false;
+  if (origin === allowed) return true;
+  if (!isNetlifyHost(allowed)) return false;
+  return origin.endsWith(`--${allowed}`);
+}
+
+function parseOriginUrl(value) {
+  try {
+    return new URL(String(value || '').trim());
+  } catch (_) {
+    return null;
+  }
+}
+
+function wildcardHostMatches(hostname, patternHost) {
+  const host = String(hostname || '').toLowerCase();
+  const pattern = String(patternHost || '').toLowerCase();
+  if (!host || !pattern) return false;
+  if (pattern === '*') return true;
+  if (pattern.startsWith('*.')) {
+    const suffix = pattern.slice(1);
+    return host.endsWith(suffix) && host.length > suffix.length;
+  }
+  if (pattern.includes('*')) {
+    const escaped = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*');
+    return new RegExp(`^${escaped}$`, 'i').test(host);
+  }
+  return host === pattern || isNetlifyAliasHost(host, pattern);
+}
+
+function originMatchesRule(origin, rule) {
+  const cleanRule = String(rule || '').trim();
+  if (!cleanRule) return false;
+  if (cleanRule === '*') return true;
+  if (!origin) return false;
+
+  const originUrl = parseOriginUrl(origin);
+  if (!originUrl) return false;
+
+  if (!cleanRule.includes('://')) {
+    return wildcardHostMatches(originUrl.hostname, cleanRule);
+  }
+
+  if (cleanRule.includes('*')) {
+    const protocolSplit = cleanRule.split('://');
+    if (protocolSplit.length !== 2) return false;
+    const protocol = `${protocolSplit[0].toLowerCase()}:`;
+    if (originUrl.protocol.toLowerCase() !== protocol) return false;
+    const hostPort = protocolSplit[1].split('/')[0];
+    if (!hostPort) return false;
+    const portIdx = hostPort.lastIndexOf(':');
+    const hasPort = portIdx > -1 && !hostPort.endsWith(']');
+    const patternHost = hasPort ? hostPort.slice(0, portIdx) : hostPort;
+    const patternPort = hasPort ? hostPort.slice(portIdx + 1) : '';
+    if (patternPort && String(originUrl.port || '') !== patternPort) return false;
+    return wildcardHostMatches(originUrl.hostname, patternHost);
+  }
+
+  const ruleUrl = parseOriginUrl(cleanRule);
+  if (!ruleUrl) return false;
+  if (originUrl.origin === ruleUrl.origin) return true;
+  if (originUrl.protocol !== ruleUrl.protocol) return false;
+  if (String(originUrl.port || '') !== String(ruleUrl.port || '')) return false;
+  return isNetlifyAliasHost(originUrl.hostname, ruleUrl.hostname);
+}
+
 function isOriginAllowed(origin) {
   if (!origin) return true;
   if (!ALLOWED_ORIGINS.length) return true;
-  return ALLOWED_ORIGINS.includes(origin);
+  return ALLOWED_ORIGINS.some((rule) => originMatchesRule(origin, rule));
 }
 
 function corsHeaders(origin) {
@@ -145,7 +220,7 @@ function corsHeaders(origin) {
   if (!ALLOWED_ORIGINS.length) {
     return { 'Access-Control-Allow-Origin': '*', 'Vary': 'Origin' };
   }
-  if (!ALLOWED_ORIGINS.includes(origin)) return {};
+  if (!isOriginAllowed(origin)) return { Vary: 'Origin' };
   return { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' };
 }
 
