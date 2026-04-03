@@ -64,7 +64,7 @@ const WALLY_NO_AUDIO_REPLY = 'Ich habe gerade kein nutzbares Audiosignal vom Mik
 const WALLY_ROBOT_SYSTEM = [
   'Du bist Wally, der lockere Fahrzeugberater von Rolf Automobile GmbH.',
   'Antworte immer auf Deutsch, kurz und knackig wie in einem normalen Gespraech mit einem Kumpel.',
-  'Starte direkt mit der Antwort, ohne dich vorzustellen oder deine Rolle zu erklaeren.',
+  'Begruesse nur einmal am Anfang eines neuen Gespraechs freundlich. Danach antworte direkt ohne neue Begruessung.',
   'Sprich natuerlich und ohne technische Formate wie "ID=..." oder Stichwortlisten.',
   'Bei Modellfragen: pruefe die Liste und antworte klar mit "Ja" oder "Nee"; bei Treffern nenne 1 bis 2 Beispiele.',
   'Bei Markenfragen: sage klar, ob verfuegbar; bei Treffern nenne 1 bis 2 passende Modelle.',
@@ -72,6 +72,7 @@ const WALLY_ROBOT_SYSTEM = [
   'Nenne keine Preise und sage stattdessen exakt: "Preis frag am besten vor Ort nach."',
   'Wenn ein Feld fehlt, sage "unbekannt".',
   `Wenn die Frage nicht zu diesen Fahrzeugen passt oder das Auto unbekannt ist, antworte exakt: "${WALLY_UNKNOWN_REPLY}"`,
+  'Wenn du inhaltlich fast dasselbe wie in der letzten Antwort sagen wuerdest, formuliere es anders und nenne nach Moeglichkeit einen neuen konkreten Fahrzeugfakt.',
   'Wiederhole dich nicht und sage nie, dass du eine KI bist.',
   'Halte Antworten bei 1 bis 3 Saetzen.'
 ].join('\n');
@@ -1087,10 +1088,23 @@ function extractLatestAssistantReply(history) {
 function normalizeReplyKey(value) {
   return String(value || '')
     .toLowerCase()
+    .replace(/\b(hallo|hi|hey|moin|servus|guten tag|guten morgen|guten abend)\b/g, ' ')
+    .replace(/\b(ich bin wally|wie kann ich dir helfen|kurz anders formuliert)\b/g, ' ')
+    .replace(/\b(na klar|klar|gerne|alles klar)\b/g, ' ')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+function chooseReplyCandidate(deterministic, sanitizedModel, history) {
+  const prevKey = normalizeReplyKey(extractLatestAssistantReply(history));
+  const deterministicKey = normalizeReplyKey(deterministic);
+  const modelKey = normalizeReplyKey(sanitizedModel);
+  if (deterministicKey && prevKey && deterministicKey === prevKey && modelKey && modelKey !== prevKey) {
+    return sanitizedModel;
+  }
+  return deterministic || sanitizedModel;
 }
 
 function avoidImmediateRepeat(candidate, history, focusedVehicle) {
@@ -1127,7 +1141,7 @@ function stabilizeReply({
     currentVehicleId
   });
   const sanitizedModel = sanitizeAssistantText(modelText);
-  let candidate = deterministic || sanitizedModel;
+  let candidate = chooseReplyCandidate(deterministic, sanitizedModel, history);
   if (candidate && looksLikeIdentityMonologue(candidate) && !asksIdentityQuestion(transcript)) {
     candidate = deterministic || 'Frag mich bitte direkt nach einem Modell oder nach Ausstattung, Baujahr, Kilometer und PS.';
   }
